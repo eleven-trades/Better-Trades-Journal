@@ -403,6 +403,15 @@ header h1 {
   background: color-mix(in srgb, var(--bad) 12%, var(--panel));
   color: var(--bad);
 }
+.calendar-grid .no-trade {
+  background: color-mix(in srgb, #a78bfa 16%, var(--panel));
+  border-color: color-mix(in srgb, #a78bfa 38%, var(--line));
+  color: #c4b5fd;
+}
+.calendar-grid .no-trade .no-trade-label {
+  color: #c4b5fd;
+  font-weight: 750;
+}
 .chart {
   height: 265px;
   font-size: 9px;
@@ -1131,6 +1140,56 @@ input[type="number"]::-webkit-outer-spin-button {
   background: var(--accent);
   color: var(--panel);
   border-color: var(--accent);
+}
+.no-trade-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--panel2);
+}
+.no-trade-toggle > div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.no-trade-toggle strong {
+  font-size: 11px;
+}
+.no-trade-toggle small {
+  color: var(--muted);
+  font-size: 9px;
+}
+.no-trade-toggle > button {
+  width: 42px;
+  height: 23px;
+  flex: 0 0 auto;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--bg);
+}
+.no-trade-toggle > button span {
+  display: block;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: var(--muted);
+  transition: transform 160ms ease, background 160ms ease;
+}
+.no-trade-toggle > button.active {
+  border-color: #a78bfa;
+  background: color-mix(in srgb, #a78bfa 22%, var(--panel));
+}
+.no-trade-toggle > button.active span {
+  transform: translateX(18px);
+  background: #c4b5fd;
+}
+.form-row.one {
+  grid-template-columns: minmax(0, 1fr);
 }
 .screenshot-drop {
   border: 1px dashed var(--line);

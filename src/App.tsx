@@ -98,6 +98,7 @@ type WeeklyReview = {
 };
 type Trade = {
   id: string;
+  kind?: "trade" | "no-trade";
   date: string;
   symbol: string;
   direction: "Long" | "Short";
@@ -466,8 +467,9 @@ export default function App() {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
-  const visibleTrades = filterByRange(trades, range),
-    lifetimeTotal = trades.reduce((s, t) => s + t.pnl, 0),
+  const recordedTrades = trades.filter((trade) => trade.kind !== "no-trade"),
+    visibleTrades = filterByRange(recordedTrades, range),
+    lifetimeTotal = recordedTrades.reduce((s, t) => s + t.pnl, 0),
     total = visibleTrades.reduce((s, t) => s + t.pnl, 0),
     wins = visibleTrades.filter((t) => t.pnl > 0),
     losses = visibleTrades.filter((t) => t.pnl < 0),
@@ -524,7 +526,7 @@ export default function App() {
               <Icon size={18} />
               <span>{item}</span>
               {item === "Reviews" &&
-                trades.some(
+                recordedTrades.some(
                   (trade) =>
                     trade.followedRules.length <
                       (strategies.find(
@@ -602,11 +604,13 @@ export default function App() {
         )}{" "}
         {page === "Trades" && (
           <TradesView
-            trades={trades}
+            trades={recordedTrades}
             strategies={strategies}
             currency={settings.currency}
             remove={(id) => setTrades(trades.filter((t) => t.id !== id))}
-            removeAll={() => setTrades([])}
+            removeAll={() =>
+              setTrades(trades.filter((trade) => trade.kind === "no-trade"))
+            }
             openTrade={openTrade}
           />
         )}{" "}
@@ -617,7 +621,7 @@ export default function App() {
           />
         )}{" "}
         {page === "Reviews" && (
-          <ReviewsView trades={trades} strategies={strategies} />
+          <ReviewsView trades={recordedTrades} strategies={strategies} />
         )}{" "}
         {page === "Weekly Improvement" && (
           <WeeklyImprovement
@@ -633,10 +637,10 @@ export default function App() {
             setTheme={setTheme}
             accent={accent}
             setAccent={setAccent}
-            trades={trades}
+            trades={recordedTrades}
             strategies={strategies}
             onImportMt5={(imports) => {
-              const known = new Set(trades.map((trade) => trade.mt5DealId).filter(Boolean));
+              const known = new Set(recordedTrades.map((trade) => trade.mt5DealId).filter(Boolean));
               const strategyId = strategies[0]?.id ?? "";
               const additions: Trade[] = imports.filter((trade) => !known.has(trade.mt5DealId)).map((trade) => ({ ...trade, id: uid(), strategyId, followedRules: [], emotion: "Focused", notes: "<ul><li>Imported from MT5 — add your review.</li></ul>" }));
               if (additions.length) setTrades([...trades, ...additions]);
@@ -1021,15 +1025,17 @@ function MiniCalendar({
 }) {
   const daily = useMemo(
     () =>
-      trades.reduce<Record<number, { pnl: number; count: number }>>((m, t) => {
+      trades.reduce<Record<number, { pnl: number; count: number; noTrade: boolean }>>((m, t) => {
         if (
           t.date.startsWith(
             `${month.getFullYear()}-${String(month.getMonth() + 1).padStart(2, "0")}`,
           )
         ) {
           const day = +t.date.slice(8),
-            current = m[day] ?? { pnl: 0, count: 0 };
-          m[day] = { pnl: current.pnl + t.pnl, count: current.count + 1 };
+            current = m[day] ?? { pnl: 0, count: 0, noTrade: false };
+          m[day] = t.kind === "no-trade"
+            ? { ...current, noTrade: true }
+            : { pnl: current.pnl + t.pnl, count: current.count + 1, noTrade: current.noTrade };
         }
         return m;
       }, {}),
@@ -1061,7 +1067,9 @@ function MiniCalendar({
                       )
                     }
                     className={
-                      daily[d]?.pnl > 0
+                      daily[d]?.count === 0 && daily[d]?.noTrade
+                        ? "no-trade"
+                        : daily[d]?.pnl > 0
                         ? "gain"
                         : daily[d]?.pnl < 0
                           ? "loss"
@@ -1069,7 +1077,9 @@ function MiniCalendar({
                     }
                   >
                     <span>{d}</span>
-                    {daily[d] !== undefined && (
+                    {daily[d]?.count === 0 && daily[d]?.noTrade ? (
+                      <strong className="no-trade-label">No trade</strong>
+                    ) : daily[d] !== undefined && daily[d].count > 0 ? (
                       <>
                         <strong>{money(daily[d].pnl, currency)}</strong>
                         <small>
@@ -1077,7 +1087,7 @@ function MiniCalendar({
                           {daily[d].count === 1 ? "trade" : "trades"}
                         </small>
                       </>
-                    )}
+                    ) : null}
                   </button>
                 ) : (
                   <span key={i} />
@@ -1099,7 +1109,7 @@ function MiniCalendar({
                   )}
                 </strong>
                 <span>
-                  {week.filter((d) => d && daily[d] !== undefined).length}{" "}
+                  {week.filter((d) => d && (daily[d]?.count ?? 0) > 0).length}{" "}
                   trading days
                 </span>
               </div>
@@ -2517,6 +2527,7 @@ function TradeModal({
   onSave: (t: Trade) => void;
 }) {
   const [f, setF] = useState({
+      isNoTradeDay: trade?.kind === "no-trade",
       calculationMode: "easy" as "easy" | "advanced",
       date: trade?.date ?? date,
       time: trade?.time ?? currentTimeFor(settings.timeZone ?? "EST"),
@@ -2539,36 +2550,45 @@ function TradeModal({
     }),
     selected = strategies.find((s) => s.id === f.strategyId),
     pnl =
-      f.calculationMode === "easy"
+      f.isNoTradeDay
+        ? 0
+        : f.calculationMode === "easy"
         ? +f.manualPnl || 0
         : (+f.exit - +f.entry) *
             (f.direction === "Long" ? 1 : -1) *
             +f.quantity -
           +f.fees,
-    update = (key: string, value: unknown) => setF({ ...f, [key]: value }),
+    update = (key: string, value: unknown) =>
+      setF((previous) => ({
+        ...previous,
+        notes: notesHtmlRef.current,
+        [key]: value,
+      })),
     submit = () => {
       if (
-        f.symbol &&
-        (f.calculationMode === "easy"
-          ? f.manualPnl !== ""
-          : Boolean(f.entry && f.exit))
+        f.isNoTradeDay ||
+        (f.symbol &&
+          (f.calculationMode === "easy"
+            ? f.manualPnl !== ""
+            : Boolean(f.entry && f.exit)))
       )
         onSave({
           id: trade?.id ?? uid(),
+          kind: f.isNoTradeDay ? "no-trade" : "trade",
           date: f.date,
           time: f.time,
-          symbol: f.symbol.toUpperCase(),
+          symbol: f.isNoTradeDay ? "NO TRADE" : f.symbol.toUpperCase(),
           direction: f.direction,
           entry: +f.entry,
           exit: +f.exit,
           quantity: +f.quantity,
           fees: +f.fees,
-          pnl,
-          risk: +f.risk,
-          strategyId: f.strategyId,
-          emotion: f.emotion,
+          pnl: f.isNoTradeDay ? 0 : pnl,
+          risk: f.isNoTradeDay ? 0 : +f.risk,
+          strategyId: f.isNoTradeDay ? "" : f.strategyId,
+          emotion: f.isNoTradeDay ? "Focused" : f.emotion,
           notes: notesHtmlRef.current,
-          followedRules: f.followedRules,
+          followedRules: f.isNoTradeDay ? [] : f.followedRules,
           screenshots: f.screenshots.length ? f.screenshots : undefined,
           screenshot: f.screenshots[0] || undefined,
         });
@@ -2606,6 +2626,7 @@ function TradeModal({
     );
     setF((previous) => ({
       ...previous,
+      notes: notesHtmlRef.current,
       screenshots: [...previous.screenshots, ...urls].slice(0, 6),
     }));
   };
@@ -2635,16 +2656,37 @@ function TradeModal({
         <div className="modal-head">
           <div>
             <p className="eyebrow">
-              {trade ? "TRADE DETAILS" : "NEW EXECUTION"}
+              {f.isNoTradeDay ? "NO-TRADE DAY" : trade ? "TRADE DETAILS" : "NEW EXECUTION"}
             </p>
-            <h2>{trade ? `Edit ${trade.symbol}` : "Journal a trade"}</h2>
+            <h2>
+              {f.isNoTradeDay
+                ? "Journal a no-trade day"
+                : trade
+                  ? `Edit ${trade.symbol}`
+                  : "Journal a trade"}
+            </h2>
           </div>
           <button className="icon-btn" onClick={onClose}>
             <X size={18} />
           </button>
         </div>
         <div className="modal-body">
-          <div className="form-row three">
+          <div className="no-trade-toggle">
+            <div>
+              <strong>No trade day</strong>
+              <small>Record an intentional day off without affecting P&amp;L, rules, or statistics.</small>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={f.isNoTradeDay}
+              className={f.isNoTradeDay ? "active" : ""}
+              onClick={() => update("isNoTradeDay", !f.isNoTradeDay)}
+            >
+              <span />
+            </button>
+          </div>
+          <div className={`form-row ${f.isNoTradeDay ? "one" : "three"}`}>
             <label>
               Date
               <JournalDatePicker
@@ -2652,13 +2694,14 @@ function TradeModal({
                 onChange={(value) => update("date", value)}
               />
             </label>
-            <label>
+            {!f.isNoTradeDay && <label>
               Time
               <JournalTimePicker
                 value={f.time}
                 onChange={(value) => update("time", value)}
               />
-            </label>
+            </label>}
+            {!f.isNoTradeDay && <>
             <label>
               Symbol
               <input
@@ -2677,7 +2720,9 @@ function TradeModal({
                 options={["Long", "Short"].map((x) => ({ value: x, label: x }))}
               />
             </label>
+            </>}
           </div>
+          {!f.isNoTradeDay && <>
           <div className="calculation-mode">
             <span>Trade calculation</span>
             <div>
@@ -2815,6 +2860,7 @@ function TradeModal({
               ))}
             </div>
           )}
+          </>}
           <div className="notes-field">
             <span>Notes</span>
             <div className="notes-toolbar" aria-label="Note formatting">
@@ -2948,7 +2994,11 @@ function TradeModal({
               Cancel
             </button>
             <button className="primary" onClick={submit}>
-              {trade ? "Save changes" : "Save trade"}
+              {f.isNoTradeDay
+                ? "Save no-trade day"
+                : trade
+                  ? "Save changes"
+                  : "Save trade"}
             </button>
           </div>
         </div>
