@@ -16,6 +16,7 @@ import {
   LayoutDashboard,
   List,
   ListOrdered,
+  Type,
   Moon,
   PanelLeftClose,
   PanelLeftOpen,
@@ -135,7 +136,9 @@ type AppSettings = {
 type Mt5SyncResult = { found: boolean; path: string; content: string; modifiedAt?: number };
 type Mt5Import = Omit<Trade, "id" | "strategyId" | "followedRules" | "emotion" | "notes">;
 const uid = () => crypto.randomUUID(),
-  today = new Date().toISOString().slice(0, 10);
+  localDateKey = (date = new Date()) =>
+    `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`,
+  today = localDateKey();
 const defaultStrategy: Strategy = {
   id: "breakout",
   name: "Opening Range Breakout",
@@ -584,6 +587,7 @@ export default function App() {
           <Overview
             trades={visibleTrades}
             calendarTrades={trades}
+            strategies={strategies}
             currency={settings.currency}
             total={total}
             wr={wr}
@@ -598,6 +602,7 @@ export default function App() {
         {page === "Calendar" && (
           <CalendarView
             trades={trades}
+            strategies={strategies}
             currency={settings.currency}
             openDate={openDate}
           />
@@ -699,6 +704,7 @@ function Metric({
 function Overview({
   trades,
   calendarTrades,
+  strategies,
   currency,
   total,
   wr,
@@ -711,6 +717,7 @@ function Overview({
 }: {
   trades: Trade[];
   calendarTrades: Trade[];
+  strategies: Strategy[];
   currency: string;
   total: number;
   wr: number;
@@ -800,6 +807,7 @@ function Overview({
           />
           <MiniCalendar
             trades={calendarTrades}
+            strategies={strategies}
             currency={currency}
             openDate={openDate}
             month={calendarMonth}
@@ -855,9 +863,9 @@ function Overview({
         <div className="card discipline">
           <SectionTitle
             title="Process score"
-            subtitle="Rules followed across all trades"
+            subtitle="Trading days where every rule was followed"
           />
-          <Discipline trades={trades} />
+          <Discipline trades={trades} strategies={strategies} />
         </div>
         <TradeTimeChart
           trades={trades}
@@ -1012,12 +1020,14 @@ function calendarDays(month: Date) {
 }
 function MiniCalendar({
   trades,
+  strategies,
   currency,
   openDate,
   month,
   showWeekly = false,
 }: {
   trades: Trade[];
+  strategies: Strategy[];
   currency: string;
   openDate: (d: string) => void;
   month: Date;
@@ -1025,21 +1035,23 @@ function MiniCalendar({
 }) {
   const daily = useMemo(
     () =>
-      trades.reduce<Record<number, { pnl: number; count: number; noTrade: boolean }>>((m, t) => {
+      trades.reduce<Record<number, { pnl: number; count: number; noTrade: boolean; missedRules: boolean }>>((m, t) => {
         if (
           t.date.startsWith(
             `${month.getFullYear()}-${String(month.getMonth() + 1).padStart(2, "0")}`,
           )
         ) {
           const day = +t.date.slice(8),
-            current = m[day] ?? { pnl: 0, count: 0, noTrade: false };
+            current = m[day] ?? { pnl: 0, count: 0, noTrade: false, missedRules: false },
+            expectedRules = strategies.find((strategy) => strategy.id === t.strategyId)?.rules ?? [],
+            missedRules = t.kind !== "no-trade" && expectedRules.some((rule) => !t.followedRules.includes(rule.id));
           m[day] = t.kind === "no-trade"
             ? { ...current, noTrade: true }
-            : { pnl: current.pnl + t.pnl, count: current.count + 1, noTrade: current.noTrade };
+            : { ...current, pnl: current.pnl + t.pnl, count: current.count + 1, missedRules: current.missedRules || missedRules };
         }
         return m;
       }, {}),
-    [trades, month],
+    [trades, strategies, month],
   );
   const cells = calendarDays(month),
     weeks = Array.from({ length: cells.length / 7 }, (_, i) =>
@@ -1057,26 +1069,27 @@ function MiniCalendar({
         {weeks.map((week, weekIndex) => (
           <div className="calendar-week" key={weekIndex}>
             <div className="calendar-grid">
-              {week.map((d, i) =>
-                d ? (
+              {week.map((d, i) => {
+                if (!d) return <span key={i} />;
+                const dateKey = `${month.getFullYear()}-${String(month.getMonth() + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+                const status = daily[d]?.count === 0 && daily[d]?.noTrade
+                  ? "no-trade"
+                  : daily[d]?.pnl > 0
+                    ? "gain"
+                    : daily[d]?.pnl < 0
+                      ? "loss"
+                      : "";
+                const isToday = dateKey === today;
+                return (
                   <button
                     key={i}
-                    onClick={() =>
-                      openDate(
-                        `${month.getFullYear()}-${String(month.getMonth() + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`,
-                      )
-                    }
-                    className={
-                      daily[d]?.count === 0 && daily[d]?.noTrade
-                        ? "no-trade"
-                        : daily[d]?.pnl > 0
-                        ? "gain"
-                        : daily[d]?.pnl < 0
-                          ? "loss"
-                          : ""
-                    }
+                    onClick={() => openDate(dateKey)}
+                    className={[status, isToday ? "today" : "", daily[d]?.missedRules ? "missed-rules" : ""].filter(Boolean).join(" ")}
                   >
-                    <span>{d}</span>
+                    <span className="calendar-day-number">{d}{isToday && <em>Today</em>}</span>
+                    {daily[d]?.missedRules && (
+                      <b className="calendar-rule-warning" title="One or more rules were missed" aria-label="Rules missed">!</b>
+                    )}
                     {daily[d]?.count === 0 && daily[d]?.noTrade ? (
                       <strong className="no-trade-label">No trade</strong>
                     ) : daily[d] !== undefined && daily[d].count > 0 ? (
@@ -1089,10 +1102,8 @@ function MiniCalendar({
                       </>
                     ) : null}
                   </button>
-                ) : (
-                  <span key={i} />
-                ),
-              )}
+                );
+              })}
             </div>
             {showWeekly && (
               <div
@@ -1153,10 +1164,21 @@ function TradeRows({
     </div>
   );
 }
-function Discipline({ trades }: { trades: Trade[] }) {
-  const followed = trades.reduce((s, t) => s + t.followedRules.length, 0),
-    total = trades.length * 4,
-    score = total ? Math.round((followed / total) * 100) : 0;
+function Discipline({ trades, strategies }: { trades: Trade[]; strategies: Strategy[] }) {
+  const tradingDays = Array.from(
+      trades.reduce<Map<string, Trade[]>>((days, trade) => {
+        days.set(trade.date, [...(days.get(trade.date) ?? []), trade]);
+        return days;
+      }, new Map()),
+    ),
+    followedDays = tradingDays.filter(([, dayTrades]) =>
+      dayTrades.every((trade) => {
+        const rules = strategies.find((strategy) => strategy.id === trade.strategyId)?.rules ?? [];
+        return rules.length > 0 && rules.every((rule) => trade.followedRules.includes(rule.id));
+      }),
+    ).length,
+    totalDays = tradingDays.length,
+    score = totalDays ? Math.round((followedDays / totalDays) * 100) : 0;
   return (
     <div className="score">
       <div
@@ -1177,7 +1199,7 @@ function Discipline({ trades }: { trades: Trade[] }) {
               : "Needs attention"}
         </strong>
         <p>
-          {followed} of {total} rules followed
+          {followedDays} of {totalDays} trading days followed all rules
         </p>
         <div className="legend">
           <i /> Process over outcome
@@ -1188,10 +1210,12 @@ function Discipline({ trades }: { trades: Trade[] }) {
 }
 function CalendarView({
   trades,
+  strategies,
   currency,
   openDate,
 }: {
   trades: Trade[];
+  strategies: Strategy[];
   currency: string;
   openDate: (d: string) => void;
 }) {
@@ -1240,6 +1264,7 @@ function CalendarView({
       <div className="card large-calendar">
         <MiniCalendar
           trades={trades}
+          strategies={strategies}
           currency={currency}
           openDate={openDate}
           month={month}
@@ -2597,6 +2622,7 @@ function TradeModal({
   const notesHtmlRef = useRef(f.notes);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const [viewerImage, setViewerImage] = useState<string | null>(null);
+  const [showTextSizes, setShowTextSizes] = useState(false);
   const imageToLocalData = (file: File) =>
     new Promise<string>((resolve, reject) => {
       const reader = new FileReader();
@@ -2888,6 +2914,36 @@ function TradeModal({
               >
                 <Heading2 size={16} />
               </button>
+              <div className="notes-size-menu">
+                <button
+                  type="button"
+                  title="Text size"
+                  aria-label="Text size"
+                  aria-expanded={showTextSizes}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => setShowTextSizes((open) => !open)}
+                >
+                  <Type size={15} /><ChevronDown size={10} />
+                </button>
+                {showTextSizes && (
+                  <div className="notes-size-options" role="menu">
+                    {[["2", "Small"], ["3", "Normal"], ["4", "Medium"], ["5", "Large"]].map(([value, label]) => (
+                      <button
+                        type="button"
+                        role="menuitem"
+                        key={value}
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => {
+                          formatNotes("fontSize", value);
+                          setShowTextSizes(false);
+                        }}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
               <span />
               <button
                 type="button"

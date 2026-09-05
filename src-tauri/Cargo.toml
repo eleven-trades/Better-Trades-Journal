@@ -1,6 +1,6 @@
 [package]
 name = "bettertrades"
-version = "1.0.3"
+version = "1.0.4"
 description = "BETTERTRADES — a private, offline trading journal"
 authors = ["Eleventrades"]
 license = ""
