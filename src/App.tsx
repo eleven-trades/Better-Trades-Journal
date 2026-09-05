@@ -730,9 +730,17 @@ function Overview({
 }) {
   const curve = useMemo(() => {
     let running = 0;
-    return [...trades]
-      .sort((a, b) => a.date.localeCompare(b.date))
-      .map((t) => ({ date: t.date.slice(5), value: (running += t.pnl) }));
+    const ordered = [...trades].sort((a, b) => a.date.localeCompare(b.date));
+    if (!ordered.length) return [];
+    const baselineDate = new Date(`${ordered[0].date}T12:00:00`);
+    baselineDate.setDate(baselineDate.getDate() - 1);
+    return [
+      { date: localDateKey(baselineDate).slice(5), value: 0 },
+      ...ordered.map((trade) => ({
+        date: trade.date.slice(5),
+        value: (running += trade.pnl),
+      })),
+    ];
   }, [trades]);
   const wins = trades.filter((t) => t.pnl > 0),
     losses = trades.filter((t) => t.pnl < 0);
