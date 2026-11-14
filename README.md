@@ -23,7 +23,6 @@ Install these once on a new development PC:
 3. [Rust via rustup](https://rustup.rs/)
 4. [Visual Studio Build Tools](https://visualstudio.microsoft.com/downloads/) with **Desktop development with C++**, the current MSVC x64/x86 toolset and a Windows 11 SDK selected
 5. VS Code is optional but recommended
-6. VS Code is optional but recommended
 
 Verify the toolchain in PowerShell:
 
@@ -33,15 +32,13 @@ node --version
 npm --version
 rustc --version
 cargo --version
-gh --version
 ```
 
 ### Restore the project on a new PC
 
 ```powershell
-gh auth login --web --git-protocol https
-gh repo clone M-Essa11/BETTERTRADES
-cd BETTERTRADES
+git clone https://github.com/eleven-trades/Better-Trades-Journal.git
+cd Better-Trades-Journal
 npm install
 npm run desktop
 ```
