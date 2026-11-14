@@ -1,6 +1,6 @@
 # BETTERTRADES
 
-BETTERTRADES is a private, offline-first Windows trading journal by Eleventrades. It is a standalone Tauri desktop application: React renders the interface and Rust provides the native window, compressed backup/restore, file dialogs, and external-link handling.
+BETTERTRADES is a free, offline-first Windows trading journal by Eleventrades. It is a standalone Tauri desktop application: React renders the interface and Rust provides the native window, compressed backup/restore, file dialogs, and external-link handling.
 
 ## Features
 
@@ -22,7 +22,7 @@ Install these once on a new development PC:
 2. [Node.js LTS](https://nodejs.org/en/download)
 3. [Rust via rustup](https://rustup.rs/)
 4. [Visual Studio Build Tools](https://visualstudio.microsoft.com/downloads/) with **Desktop development with C++**, the current MSVC x64/x86 toolset and a Windows 11 SDK selected
-5. [GitHub CLI](https://cli.github.com/) for private-repository authentication
+5. VS Code is optional but recommended
 6. VS Code is optional but recommended
 
 Verify the toolchain in PowerShell:
